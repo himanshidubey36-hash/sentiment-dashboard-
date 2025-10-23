@@ -2,72 +2,96 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title="Nifty 50 News Sentiment Analysis Dashboard", layout="wide")
+# Set page config
+st.set_page_config(
+    page_title="Nifty 50 Sentiment Dashboard",
+    page_icon="📊",
+    layout="wide"
+)
 
-# Load your data
-df = pd.read_excel('sentiment_analysis_results.xlsx')
-top5 = pd.read_excel('selected_5_companies.xlsx')
+st.title("📊 Nifty 50 News Sentiment Analysis Dashboard")
+st.markdown("---")
 
-# --- SIDEBAR ---
-st.sidebar.title("Filters & Controls")
+@st.cache_data
+def load_data():
+    try:
+        df = pd.read_excel('sentiment_analysis_results.xlsx')
+        top5 = pd.read_excel('selected_5_companies.xlsx')
+        return df, top5
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
-# Interactive: Company selection
-all_companies = sorted(df['Company'].unique())
-selected_company = st.sidebar.selectbox("Company", all_companies)
+df, top5 = load_data()
 
-# Interactive: Sentiment slider
-min_score, max_score = float(df['sentiment'].min()), float(df['sentiment'].max())
-score_threshold = st.sidebar.slider("Sentiment Score Threshold", min_value=min_score, max_value=max_score, value=min_score)
+if not df.empty and 'Company' in df.columns and 'sentiment' in df.columns:
+    # --- Sidebar interactive filters ---
+    st.sidebar.header("Interactive Filters")
+    companies = df['Company'].unique()
+    selected_company = st.sidebar.selectbox("Select Company", companies)
+    sentiment_min = st.sidebar.slider(
+        "Minimum Sentiment Score",
+        min_value=float(df['sentiment'].min()),
+        max_value=float(df['sentiment'].max()),
+        value=float(df['sentiment'].min()),
+        step=0.01
+    )
 
-# Interactive: Article count display
-show_table = st.sidebar.checkbox("Show All Rows of Filtered Table", value=False)
+    filtered_df = df[(df['Company'] == selected_company) & (df['sentiment'] >= sentiment_min)]
 
-# Filter dataframe based on user selection
-filtered_df = df[(df['Company'] == selected_company) & (df['sentiment'] >= score_threshold)]
+    # --- Metrics ---
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📰 Filtered Articles", len(filtered_df))
+    col2.metric("✅ Positive Articles", (filtered_df['sentiment'] > 0.05).sum())
+    avg_sent = filtered_df['sentiment'].mean() if not filtered_df.empty else 0
+    col3.metric("📈 Average Sentiment", f"{avg_sent:.3f}")
 
-st.title("📊 Nifty 50 News Sentiment Dashboard")
-st.write(f"Use the sidebar on the left to interactively explore sentiment analysis results!")
-
-# --- METRICS ---
-col1, col2, col3 = st.columns(3)
-col1.metric("Company", selected_company)
-col2.metric("Articles Selected", len(filtered_df))
-if not filtered_df.empty:
-    col3.metric("Average Sentiment", f"{filtered_df['sentiment'].mean():.2f}")
-else:
-    col3.metric("Average Sentiment", "N/A")
-
-# --- CHART ---
-st.subheader(f"Sentiment Scores for {selected_company} (Sentiment≥{score_threshold:.2f})")
-if not filtered_df.empty:
-    chart = px.bar(filtered_df, x='Published', y='sentiment', color='sentiment',
-                   title=f"Sentiment by Date - {selected_company}",
-                   color_continuous_scale='RdYlGn')
-    st.plotly_chart(chart, use_container_width=True)
-else:
-    st.info("No articles match current filters.")
-
-# --- TABLE ---
-st.subheader("Filtered Article Details")
-if not filtered_df.empty:
-    # Expand/collapse whole table
-    if show_table:
-        st.write(filtered_df)
+    # --- Sentiment over time chart ---
+    st.header(f"Sentiment Details for {selected_company} (Sentiment ≥ {sentiment_min})")
+    if not filtered_df.empty:
+        fig = px.bar(
+            filtered_df,
+            x="Published",
+            y="sentiment",
+            color="sentiment",
+            color_continuous_scale="RdYlGn",
+            title=f"Sentiment Over Time for {selected_company}",
+            labels={"sentiment": "Sentiment Score"},
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.write(filtered_df.head(10))
-    # Download button for filtered data
-    csv = filtered_df.to_csv(index=False).encode("utf-8")
-    st.download_button(label="⬇️ Download Current Table as CSV", data=csv,
-                       file_name=f"{selected_company}_sentiment.csv", mime='text/csv')
+        st.warning("No articles match your filters.")
+
+    # --- Data table + download ---
+    st.subheader("Filtered Article Data")
+    st.dataframe(filtered_df, use_container_width=True)
+
+    csv = filtered_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="⬇️ Download Filtered Data as CSV",
+        data=csv,
+        file_name=f"{selected_company}_sentiment.csv",
+        mime="text/csv"
+    )
+
+    st.markdown("---")
+
+    # --- Top 5 companies section ---
+    st.subheader("🏆 Top 5 Companies Selected for Analysis")
+    if not top5.empty:
+        st.dataframe(top5, use_container_width=True, hide_index=True)
+        st.info("💡 These companies were selected based on positive sentiment scores and news coverage.")
+    else:
+        st.warning("Top 5 companies data not available.")
+
+    # --- Expandable raw data section ---
+    with st.expander("📰 View All Articles (Full Data)"):
+        st.dataframe(df, use_container_width=True)
+
 else:
-    st.warning("No data to display with these filters.")
+    st.error("❌ Required data not found or columns missing.")
+    st.info("Please ensure the Excel files contain 'Company' and 'sentiment' columns.")
 
-# --- TOP 5 COMPANIES ---
-st.subheader("🏆 Top 5 Companies (Based on Sentiment)")
-st.write(top5)
-
-# --- Raw Data Expander ---
-with st.expander("Show All Data"):
-    st.write(df)
-
-st.caption("Interactive dashboard built with Streamlit • Data from Google News RSS • Sentiment via VADER")
+st.markdown("---")
+st.caption("Built with Streamlit • Data from Google News RSS • Sentiment Analysis using VADER")
