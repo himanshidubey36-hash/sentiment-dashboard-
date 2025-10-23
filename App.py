@@ -51,7 +51,7 @@ if not df.empty and 'Company' in df.columns and 'sentiment' in df.columns:
     if not filtered_df.empty:
         fig = px.bar(
             filtered_df,
-            x="Published",
+            x="Company",
             y="sentiment",
             color="sentiment",
             color_continuous_scale="RdYlGn",
